@@ -4,16 +4,17 @@
 use std::io::Cursor;
 
 use rocket::{
-    fairing::{Fairing, Info, Kind},
+    fairing::{self, Fairing, Info, Kind},
     http::{ContentType, Header, HeaderMap, Method, Status},
     response::{self, Responder},
-    Data, Request, Response, Rocket,
+    Data, Request, Response, Rocket, Build
 };
 
 use crate::CONFIG;
 
 pub struct AppHeaders();
 
+#[rocket::async_trait]
 impl Fairing for AppHeaders {
     fn info(&self) -> Info {
         Info {
@@ -22,7 +23,7 @@ impl Fairing for AppHeaders {
         }
     }
 
-    fn on_response(&self, _req: &Request, res: &mut Response) {
+    async fn on_response<'r>(&self, _req: &'r Request<'_>, res: &mut Response<'r>) {
         res.set_raw_header("Feature-Policy", "accelerometer 'none'; ambient-light-sensor 'none'; autoplay 'none'; camera 'none'; encrypted-media 'none'; fullscreen 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; midi 'none'; payment 'none'; picture-in-picture 'none'; sync-xhr 'self' https://haveibeenpwned.com https://2fa.directory; usb 'none'; vr 'none'");
         res.set_raw_header("Referrer-Policy", "same-origin");
         res.set_raw_header("X-Frame-Options", "SAMEORIGIN");
@@ -65,6 +66,7 @@ impl Cors {
     }
 }
 
+#[rocket::async_trait]
 impl Fairing for Cors {
     fn info(&self) -> Info {
         Info {
@@ -73,7 +75,7 @@ impl Fairing for Cors {
         }
     }
 
-    fn on_response(&self, request: &Request, response: &mut Response) {
+    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         let req_headers = request.headers();
 
         if let Some(origin) = Cors::get_allowed_origin(req_headers) {
@@ -82,15 +84,15 @@ impl Fairing for Cors {
 
         // Preflight request
         if request.method() == Method::Options {
-            let req_allow_headers = Cors::get_header(req_headers, "Access-Control-Request-Headers");
-            let req_allow_method = Cors::get_header(req_headers, "Access-Control-Request-Method");
+            let req_allow_headers = Cors::get_header(&req_headers, "Access-Control-Request-Headers");
+            let req_allow_method = Cors::get_header(&req_headers, "Access-Control-Request-Method");
 
             response.set_header(Header::new("Access-Control-Allow-Methods", req_allow_method));
             response.set_header(Header::new("Access-Control-Allow-Headers", req_allow_headers));
             response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
             response.set_status(Status::Ok);
             response.set_header(ContentType::Plain);
-            response.set_sized_body(Cursor::new(""));
+            response.set_sized_body(Some(0), Cursor::new(""));
         }
     }
 }
@@ -113,15 +115,11 @@ impl<R> Cached<R> {
     }
 }
 
-impl<'r, R: Responder<'r>> Responder<'r> for Cached<R> {
-    fn respond_to(self, req: &Request) -> response::Result<'r> {
-        match self.0.respond_to(req) {
-            Ok(mut res) => {
-                res.set_raw_header("Cache-Control", self.1);
-                Ok(res)
-            }
-            e @ Err(_) => e,
-        }
+impl<'r, R: 'r + Responder<'r, 'static> + Send> Responder<'r, 'static> for Cached<R> {
+    fn respond_to(self, request: &'r Request<'_>) -> response::Result<'static> {
+        let mut res = self.0.respond_to(request)?;
+        res.set_raw_header("Cache-Control", self.1);
+        Ok(res)
     }
 }
 
@@ -132,46 +130,23 @@ const LOGGED_ROUTES: [&str; 6] =
 
 // Boolean is extra debug, when true, we ignore the whitelist above and also print the mounts
 pub struct BetterLogging(pub bool);
+#[rocket::async_trait]
 impl Fairing for BetterLogging {
     fn info(&self) -> Info {
         Info {
             name: "Better Logging",
-            kind: Kind::Launch | Kind::Request | Kind::Response,
+            kind: Kind::Request | Kind::Response,
         }
     }
 
-    fn on_launch(&self, rocket: &Rocket) {
-        if self.0 {
-            info!(target: "routes", "Routes loaded:");
-            let mut routes: Vec<_> = rocket.routes().collect();
-            routes.sort_by_key(|r| r.uri.path());
-            for route in routes {
-                if route.rank < 0 {
-                    info!(target: "routes", "{:<6} {}", route.method, route.uri);
-                } else {
-                    info!(target: "routes", "{:<6} {} [{}]", route.method, route.uri, route.rank);
-                }
-            }
-        }
-
-        let config = rocket.config();
-        let scheme = if config.tls_enabled() {
-            "https"
-        } else {
-            "http"
-        };
-        let addr = format!("{}://{}:{}", &scheme, &config.address, &config.port);
-        info!(target: "start", "Rocket has launched from {}", addr);
-    }
-
-    fn on_request(&self, request: &mut Request<'_>, _data: &Data) {
+    async fn on_request(&self, request: &mut Request<'_>, _data: &mut Data) {
         let method = request.method();
         if !self.0 && method == Method::Options {
             return;
         }
         let uri = request.uri();
-        let uri_path = uri.path();
-        let uri_subpath = uri_path.strip_prefix(&CONFIG.domain_path()).unwrap_or(uri_path);
+        let uri_path = uri.path().url_decode_lossy();
+        let uri_subpath = uri_path.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path);
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             match uri.query() {
                 Some(q) => info!(target: "request", "{} {}?{}", method, uri_path, &q[..q.len().min(30)]),
@@ -180,18 +155,18 @@ impl Fairing for BetterLogging {
         }
     }
 
-    fn on_response(&self, request: &Request, response: &mut Response) {
+    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         if !self.0 && request.method() == Method::Options {
             return;
         }
-        let uri_path = request.uri().path();
-        let uri_subpath = uri_path.strip_prefix(&CONFIG.domain_path()).unwrap_or(uri_path);
+        let uri_path = request.uri().path().url_decode_lossy();
+        let uri_subpath = uri_path.strip_prefix(&CONFIG.domain_path()).unwrap_or(&uri_path);
         if self.0 || LOGGED_ROUTES.iter().any(|r| uri_subpath.starts_with(r)) {
             let status = response.status();
-            if let Some(route) = request.route() {
-                info!(target: "response", "{} => {} {}", route, status.code, status.reason)
+            if let Some(ref route) = request.route() {
+                info!(target: "response", "{} => {}", route, status)
             } else {
-                info!(target: "response", "{} {}", status.code, status.reason)
+                info!(target: "response", "{}", status)
             }
         }
     }
@@ -217,6 +192,14 @@ pub fn read_file(path: &str) -> IOResult<Vec<u8>> {
     file.read_to_end(&mut contents)?;
 
     Ok(contents)
+}
+
+pub fn write_file(path: &str, content: &[u8]) -> Result<(), crate::error::Error> {
+    use std::io::Write;
+    let mut f = File::create(path)?;
+    f.write_all(content)?;
+    f.flush()?;
+    Ok(())
 }
 
 pub fn read_file_string(path: &str) -> IOResult<String> {
@@ -523,10 +506,7 @@ where
     }
 }
 
-use reqwest::{
-    blocking::{Client, ClientBuilder},
-    header,
-};
+use reqwest::{header, Client, ClientBuilder};
 
 pub fn get_reqwest_client() -> Client {
     get_reqwest_client_builder().build().expect("Failed to build client")

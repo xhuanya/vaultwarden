@@ -27,7 +27,6 @@ pub fn routes() -> Vec<Route> {
 //
 // Move this somewhere else
 //
-use rocket::response::Response;
 use rocket::Route;
 use rocket_contrib::json::Json;
 use serde_json::Value;
@@ -41,7 +40,7 @@ use crate::{
 };
 
 #[put("/devices/identifier/<uuid>/clear-token")]
-fn clear_device_token<'a>(uuid: String) -> Response<'a> {
+fn clear_device_token<'a>(uuid: String) -> &'static str {
     // This endpoint doesn't have auth header
 
     let _ = uuid;
@@ -50,7 +49,7 @@ fn clear_device_token<'a>(uuid: String) -> Response<'a> {
     // This only clears push token
     // https://github.com/bitwarden/core/blob/master/src/Api/Controllers/DevicesController.cs#L109
     // https://github.com/bitwarden/core/blob/master/src/Core/Services/Implementations/DeviceService.cs#L37
-    Response::new()
+    ""
 }
 
 #[put("/devices/identifier/<uuid>/token", data = "<data>")]
@@ -141,7 +140,7 @@ fn put_eq_domains(data: JsonUpcase<EquivDomainData>, headers: Headers, conn: DbC
 }
 
 #[get("/hibp/breach?<username>")]
-fn hibp_breach(username: String) -> JsonResult {
+async fn hibp_breach(username: String) -> JsonResult {
     let url = format!(
         "https://haveibeenpwned.com/api/v3/breachedaccount/{}?truncateResponse=false&includeUnverified=false",
         username
@@ -150,14 +149,14 @@ fn hibp_breach(username: String) -> JsonResult {
     if let Some(api_key) = crate::CONFIG.hibp_api_key() {
         let hibp_client = get_reqwest_client();
 
-        let res = hibp_client.get(&url).header("hibp-api-key", api_key).send()?;
+        let res = hibp_client.get(&url).header("hibp-api-key", api_key).send().await?;
 
         // If we get a 404, return a 404, it means no breached accounts
         if res.status() == 404 {
             return Err(Error::empty().with_code(404));
         }
 
-        let value: Value = res.error_for_status()?.json()?;
+        let value: Value = res.error_for_status()?.json().await?;
         Ok(Json(value))
     } else {
         Ok(Json(json!([{

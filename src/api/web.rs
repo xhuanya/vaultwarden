@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rocket::{http::ContentType, response::content::Content, response::NamedFile, Route};
+use rocket::{http::ContentType, response::content::Custom, response::NamedFile, Route};
 use rocket_contrib::json::Json;
 use serde_json::Value;
 
@@ -17,15 +17,15 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[get("/")]
-fn web_index() -> Cached<Option<NamedFile>> {
-    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).ok())
+async fn web_index() -> Cached<Option<NamedFile>> {
+    Cached::short(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join("index.html")).await.ok())
 }
 
 #[get("/app-id.json")]
-fn app_id() -> Cached<Content<Json<Value>>> {
+fn app_id() -> Cached<Custom<Json<Value>>> {
     let content_type = ContentType::new("application", "fido.trusted-apps+json");
 
-    Cached::long(Content(
+    Cached::long(Custom(
         content_type,
         Json(json!({
         "trustedFacets": [
@@ -51,18 +51,18 @@ fn app_id() -> Cached<Content<Json<Value>>> {
 }
 
 #[get("/<p..>", rank = 10)] // Only match this if the other routes don't match
-fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
-    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).ok())
+async fn web_files(p: PathBuf) -> Cached<Option<NamedFile>> {
+    Cached::long(NamedFile::open(Path::new(&CONFIG.web_vault_folder()).join(p)).await.ok())
 }
 
 #[get("/attachments/<uuid>/<file..>")]
-fn attachments(uuid: String, file: PathBuf) -> Option<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file)).ok()
+async fn attachments(uuid: String, file: PathBuf) -> Option<NamedFile> {
+    NamedFile::open(Path::new(&CONFIG.attachments_folder()).join(uuid).join(file)).await.ok()
 }
 
 #[get("/sends/<send_id>/<file_id>")]
-fn sends(send_id: String, file_id: String) -> Option<NamedFile> {
-    NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).ok()
+async fn sends(send_id: String, file_id: String) -> Option<NamedFile> {
+    NamedFile::open(Path::new(&CONFIG.sends_folder()).join(send_id).join(file_id)).await.ok()
 }
 
 #[get("/alive")]
@@ -74,23 +74,23 @@ fn alive() -> Json<String> {
 }
 
 #[get("/bwrs_static/<filename>")]
-fn static_files(filename: String) -> Result<Content<&'static [u8]>, Error> {
+fn static_files(filename: String) -> Result<Custom<&'static [u8]>, Error> {
     match filename.as_ref() {
-        "mail-github.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
-        "logo-gray.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
-        "shield-white.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/shield-white.png"))),
-        "error-x.svg" => Ok(Content(ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
-        "hibp.png" => Ok(Content(ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
+        "mail-github.png" => Ok(Custom(ContentType::PNG, include_bytes!("../static/images/mail-github.png"))),
+        "logo-gray.png" => Ok(Custom(ContentType::PNG, include_bytes!("../static/images/logo-gray.png"))),
+        "shield-white.png" => Ok(Custom(ContentType::PNG, include_bytes!("../static/images/shield-white.png"))),
+        "error-x.svg" => Ok(Custom(ContentType::SVG, include_bytes!("../static/images/error-x.svg"))),
+        "hibp.png" => Ok(Custom(ContentType::PNG, include_bytes!("../static/images/hibp.png"))),
 
-        "bootstrap.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
+        "bootstrap.css" => Ok(Custom(ContentType::CSS, include_bytes!("../static/scripts/bootstrap.css"))),
         "bootstrap-native.js" => {
-            Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js")))
+            Ok(Custom(ContentType::JavaScript, include_bytes!("../static/scripts/bootstrap-native.js")))
         }
-        "identicon.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
-        "datatables.js" => Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
-        "datatables.css" => Ok(Content(ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
+        "identicon.js" => Ok(Custom(ContentType::JavaScript, include_bytes!("../static/scripts/identicon.js"))),
+        "datatables.js" => Ok(Custom(ContentType::JavaScript, include_bytes!("../static/scripts/datatables.js"))),
+        "datatables.css" => Ok(Custom(ContentType::CSS, include_bytes!("../static/scripts/datatables.css"))),
         "jquery-3.5.1.slim.js" => {
-            Ok(Content(ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.5.1.slim.js")))
+            Ok(Custom(ContentType::JavaScript, include_bytes!("../static/scripts/jquery-3.5.1.slim.js")))
         }
         _ => err!(format!("Static file not found: {}", filename)),
     }

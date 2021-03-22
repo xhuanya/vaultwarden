@@ -152,7 +152,7 @@ fn check_duo_fields_custom(data: &EnableDuoData) -> bool {
 }
 
 #[post("/two-factor/duo", data = "<data>")]
-fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+async fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
     let data: EnableDuoData = data.into_inner().data;
     let mut user = headers.user;
 
@@ -163,7 +163,7 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
     let (data, data_str) = if check_duo_fields_custom(&data) {
         let data_req: DuoData = data.into();
         let data_str = serde_json::to_string(&data_req)?;
-        duo_api_request("GET", "/auth/v2/check", "", &data_req).map_res("Failed to validate Duo credentials")?;
+        duo_api_request("GET", "/auth/v2/check", "", &data_req).await.map_res("Failed to validate Duo credentials")?;
         (data_req.obscure(), data_str)
     } else {
         (DuoData::secret(), String::new())
@@ -185,11 +185,11 @@ fn activate_duo(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn)
 }
 
 #[put("/two-factor/duo", data = "<data>")]
-fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
-    activate_duo(data, headers, conn)
+async fn activate_duo_put(data: JsonUpcase<EnableDuoData>, headers: Headers, conn: DbConn) -> JsonResult {
+    activate_duo(data, headers, conn).await
 }
 
-fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
+async fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> EmptyResult {
     use reqwest::{header, Method};
     use std::str::FromStr;
 
@@ -209,7 +209,8 @@ fn duo_api_request(method: &str, path: &str, params: &str, data: &DuoData) -> Em
         .basic_auth(username, Some(password))
         .header(header::USER_AGENT, "vaultwarden:Duo/1.0 (Rust)")
         .header(header::DATE, date)
-        .send()?
+        .send()
+        .await?
         .error_for_status()?;
 
     Ok(())
@@ -343,7 +344,7 @@ fn parse_duo_values(key: &str, val: &str, ikey: &str, prefix: &str, time: i64) -
         err!("Invalid ikey")
     }
 
-    let expire = match expire.parse() {
+    let expire: i64 = match expire.parse() {
         Ok(e) => e,
         Err(_) => err!("Invalid expire time"),
     };
