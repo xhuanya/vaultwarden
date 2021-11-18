@@ -21,5 +21,6 @@ elif [ -d /etc/bitwarden_rs.d ]; then
         fi
     done
 fi
-sed -i "s/ENV_PORT_HUAN/$PORT/g" .env
+sed -i "s/ENV_PORT_HUAN/$PORT/g" /.env
 exec /vaultwarden "${@}"
+`
