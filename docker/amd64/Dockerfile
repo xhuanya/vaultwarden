@@ -87,7 +87,7 @@ RUN cargo build --features ${DB} --release
 FROM debian:buster-slim
 
 ENV ROCKET_ENV "staging"
-ENV ROCKET_PORT=80
+ENV ROCKET_PORT=8080
 ENV ROCKET_WORKERS=10
 
 
@@ -106,7 +106,7 @@ RUN mkdir /data \
 
 
 VOLUME /data
-EXPOSE 80
+EXPOSE 8080
 EXPOSE 3012
 
 # Copies the files from the context (Rocket.toml file and web-vault)
