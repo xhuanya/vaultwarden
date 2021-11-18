@@ -118,7 +118,7 @@ COPY --from=build /app/target/release/vaultwarden .
 
 COPY docker/healthcheck.sh /healthcheck.sh
 COPY docker/start.sh /start.sh
-
+COPY .env /.env
 HEALTHCHECK --interval=60s --timeout=10s CMD ["/healthcheck.sh"]
 
 # Configures the startup!
