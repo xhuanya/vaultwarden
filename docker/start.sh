@@ -23,6 +23,7 @@ elif [ -d /etc/bitwarden_rs.d ]; then
 fi
 echo "${@}"
 echo $PORT
-find / -name .env
+find / -name ".env" >a.txt
+cat a.txt
 exec /vaultwarden "${@}"
 `
