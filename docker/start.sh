@@ -25,4 +25,4 @@ echo "${@}"
 sed -i "s/ENV_PORT_HUAN/$PORT/" /.env
 sed -i "s/ENV_SQL_HUAN/$DATABASE_URL/" /.env
 exec /vaultwarden "${@}"
-`
+
