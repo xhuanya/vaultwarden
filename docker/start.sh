@@ -22,7 +22,10 @@ elif [ -d /etc/bitwarden_rs.d ]; then
     done
 fi
 echo "${@}"
-sed -i "s/ENV_PORT_HUAN/$PORT/" /.env
-sed -i "s/ENV_SQL_HUAN/$DATABASE_URL/" /.env
+echo "替换配置"
+sed -i "s#ENV_PORT_HUAN#$PORT#" /.env
+sed -i "s#ENV_SQL_HUAN#$DATABASE_URL#" /.env
+echo "配置替换完毕"
+cat /.env
 exec /vaultwarden "${@}"
 
