@@ -1,5 +1,8 @@
 #!/bin/sh
-
+echo "替换配置"
+sed -i "s#ENV_PORT_HUAN#$PORT#" /.env
+sed -i "s#ENV_SQL_HUAN#$DATABASE_URL#" /.env
+echo "配置替换完毕"
 if [ -r /etc/vaultwarden.sh ]; then
     . /etc/vaultwarden.sh
 elif [ -r /etc/bitwarden_rs.sh ]; then
@@ -21,11 +24,5 @@ elif [ -d /etc/bitwarden_rs.d ]; then
         fi
     done
 fi
-echo "${@}"
-echo "替换配置"
-sed -i "s#ENV_PORT_HUAN#$PORT#" /.env
-sed -i "s#ENV_SQL_HUAN#$DATABASE_URL#" /.env
-echo "配置替换完毕"
-cat /.env
 exec /vaultwarden "${@}"
 
